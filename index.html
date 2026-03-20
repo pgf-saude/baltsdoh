@@ -551,7 +551,7 @@ html,body{height:100%;font-family:Inter,system-ui,sans-serif;background:#f4f7fb}
 <button id="chat-btn" onclick="toggleChat()" title="Baltimore Health AI Assistant (free via Google Gemini)">🤖</button>
 <div id="chat-panel">
   <div class="ch-hdr">
-    <div><div class="ch-hdr-title">🤖 Baltimore Health AI</div><div class="ch-hdr-sub">Powered by Google Gemini (free) · EN &amp; PT</div></div>
+    <div><div class="ch-hdr-title">🤖 Baltimore Health AI</div>      <div class="ch-hdr-sub">Powered by Groq / Llama 3 (free) · EN &amp; PT</div></div>
     <button class="ch-close" onclick="toggleChat()">✕</button>
   </div>
   <div id="chat-msgs">
@@ -565,8 +565,8 @@ html,body{height:100%;font-family:Inter,system-ui,sans-serif;background:#f4f7fb}
     <span class="ch-sug" onclick="sendSug(this)">How to submit a report?</span>
   </div>
   <div class="ch-key-row">
-    <input type="password" id="gemini-key" placeholder="Paste free Gemini API key (AIza…)" oninput="saveKey(this.value)">
-    <div class="ch-key-hint">Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/app/apikey</a> — no credit card needed. Saved in your browser only.</div>
+    <input type="password" id="groq-key" placeholder="Paste free Groq API key (gsk_…)" oninput="saveKey(this.value)">
+    <div class="ch-key-hint">Free key at <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a> — no credit card needed. Saved in your browser only.</div>
   </div>
   <div id="chat-inp-row">
     <textarea id="chat-inp" rows="1" placeholder="Ask about Baltimore health data…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}" oninput="autoResize(this)"></textarea>
@@ -1175,10 +1175,10 @@ function shareEM(){const url=buildURL(),p1=pinA?pinA.split('/')[0]:'',p2=pinB?pi
 function doEmbed(doCopy){const url=buildURL(),code=`<iframe src="${url}&embed=1" width="100%" height="600" frameborder="0" style="border-radius:8px;border:1px solid #e0e0e0" title="Baltimore Health Dashboard"></iframe>`;if(doCopy){navigator.clipboard.writeText(code).then(()=>toast('Embed code copied ✓'));return;}const box=document.getElementById('embed-box');box.style.display=box.style.display==='none'?'flex':'none';box.style.flexDirection='column';document.getElementById('embed-code').textContent=code;}
 
 // ═══════════════════════════════════════════════════════
-// CHATBOT — Google Gemini 1.5 Flash (FREE)
+// CHATBOT — Groq API (FREE — llama-3.3-70b-versatile)
 // ═══════════════════════════════════════════════════════
 function toggleChat(){document.getElementById('chat-panel').classList.toggle('open');}
-function saveKey(v){geminiKey=v.trim();localStorage.setItem('bhd_gkey',geminiKey);}
+function saveKey(v){geminiKey=v.trim();localStorage.setItem('bhd_gkey',geminiKey);const el=document.getElementById('groq-key');if(el)el.value=geminiKey;}
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,80)+'px';}
 function sendSug(el){document.getElementById('chat-inp').value=el.textContent;sendChat();el.closest('.ch-sugs').style.display='none';}
 function appendMsg(text,cls){const el=document.createElement('div');el.className='cmsg '+cls;el.textContent=text;const msgs=document.getElementById('chat-msgs');msgs.appendChild(el);el.scrollIntoView({behavior:'smooth'});return el;}
@@ -1187,43 +1187,70 @@ async function sendChat(){
   const inp=document.getElementById('chat-inp'),msg=inp.value.trim();if(!msg)return;
   inp.value='';inp.style.height='auto';appendMsg(msg,'user');
   const typing=appendMsg('Thinking…','bot typing');
-  if(!geminiKey){typing.innerHTML='⚠️ Add your free Gemini key below.<br><a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#4285F4">Get free key →</a>';typing.classList.remove('typing');return;}
+
+  if(!geminiKey){
+    typing.innerHTML='⚠️ Add your free Groq key below.<br><a href="https://console.groq.com/keys" target="_blank" style="color:#4285F4">Get free key at console.groq.com →</a>';
+    typing.classList.remove('typing');return;
+  }
 
   const top5=Object.entries(BASE).sort(([,a],[,b])=>a.hi-b.hi).slice(0,5).map(([k,v])=>`${k.split('/')[0]}: HI=${v.hi}, LE=${v.le}yrs, poverty=${v.povR||v.pv}%`).join('; ');
-  const best5=Object.entries(BASE).sort(([,a],[,b])=>b.hi-a.hi).slice(0,5).map(([k,v])=>`${k.split('/')[0]}: HI=${v.hi}, income=$${v.medInc?Math.round(v.medInc/1000)+'k':'?'}`).join('; ');
-  const ctx=`You are an AI assistant embedded in the Baltimore Health Dashboard (baltimorehealthdashboard.gov). You help users understand neighborhood health equity data for Baltimore, MD.
+  const best5=Object.entries(BASE).sort(([,a],[,b])=>b.hi-a.hi).slice(0,5).map(([k,v])=>`${k.split('/')[0]}: HI=${v.hi}, income=${v.medInc?Math.round(v.medInc/1000)+'k':'?'}`).join('; ');
 
-DATA (${Object.keys(BASE).length} neighborhoods, years 2016–2023):
-Metrics: Health Index (0-100), Life Expectancy, Asthma ED rate, Lead %, Vacancy %, Poverty %, Unemployment %, HS graduation %, 311 Hazards.
-SDOH: race/ethnicity, gender, median income, poverty, education, uninsured %, renter %, single-parent %, food security %.
-City averages: HI ~58, Life exp ~69 yrs, Poverty ~21.8%, Median income ~$52,400, Bachelor's+ ~28.6%.
-5 WORST neighborhoods: ${top5}.
-5 BEST neighborhoods: ${best5}.
-Key fact: 56-point health index gap between worst (Sandtown-Winchester HI=28) and best (Roland Park HI=84).
+  const systemPrompt=`You are an AI assistant embedded in the Baltimore Health Dashboard. You help users understand neighborhood health equity data for Baltimore, MD, USA.
 
-Dashboard features: interactive map, pin 2 neighborhoods to compare, Social Profile page (SDOH), Submit Report (geo-pin), 311 Resource Guide, time slider 2016-2023, date range filter.
+DATA AVAILABLE (${Object.keys(BASE).length} neighborhoods, years 2016–2023):
+Metrics per neighborhood: Health Index (0-100 composite), Life Expectancy (years), Asthma ED rate per 1k, Lead exposure %, Vacancy %, Poverty %, Unemployment %, HS graduation %, 311 Hazards (calls).
+Social Determinants (SDOH): race/ethnicity breakdown, gender split, median household income, poverty rate, education attainment, uninsured %, renter-occupied %, single-parent households %, food security %.
+City averages: Health Index ~58, Life expectancy ~69 yrs, Poverty ~21.8%, Median income ~$52,400, Bachelor's+ ~28.6%, Uninsured ~11.4%.
+5 MOST DEPRIVED: ${top5}.
+5 HEALTHIEST: ${best5}.
+Key insight: 56-point health index gap between worst (Sandtown-Winchester/Harlem Park, HI=28) and best (Greater Roland Park/Poplar Hill, HI=84) neighborhoods — one of the starkest health equity gaps in any US city.
 
-Answer in the same language the user writes in (English or Português). Be concise, empathetic, and data-accurate.`;
+DASHBOARD FEATURES: Interactive choropleth map, pin up to 2 neighborhoods to compare side-by-side, Social Profile page (15 SDOH variables with charts), Submit Community Report with geo-pin, 311 Resource Guide, year slider 2016-2023, date range filter, share/embed links.
+
+Be concise, empathetic, data-accurate, and helpful. Answer in the SAME LANGUAGE the user writes in — English or Português. If asked to compare specific neighborhoods, use the data above. Never invent data.`;
 
   chatHistory.push({role:'user',content:msg});
   if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
 
   try{
-    const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contents:[
-        {role:'user',parts:[{text:'[SYSTEM]\n'+ctx}]},
-        {role:'model',parts:[{text:'Understood. Ready to help with Baltimore health data.'}]},
-        ...chatHistory.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}))
-      ],generationConfig:{maxOutputTokens:600,temperature:0.7}})
+    const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+geminiKey},
+      body:JSON.stringify({
+        model:'llama-3.3-70b-versatile',
+        messages:[
+          {role:'system',content:systemPrompt},
+          ...chatHistory.map(m=>({role:m.role==='assistant'?'assistant':'user',content:m.content}))
+        ],
+        max_tokens:600,
+        temperature:0.7
+      })
     });
-    if(!resp.ok){const err=await resp.json();const m=err?.error?.message||resp.statusText;typing.textContent=m.includes('API_KEY_INVALID')?'❌ Invalid key. Check your Gemini API key.':m.includes('QUOTA')?'⏳ Quota reached. Wait a minute.':'API error: '+m;typing.classList.remove('typing');return;}
+
+    if(!resp.ok){
+      const err=await resp.json();
+      const m=err?.error?.message||resp.statusText;
+      typing.textContent=
+        m.includes('invalid_api_key')||m.includes('401')?'❌ Invalid Groq key. Check your key at console.groq.com/keys':
+        m.includes('rate_limit')||m.includes('429')?'⏳ Rate limit reached. Wait a moment and try again.':
+        m.includes('model')?'❌ Model not available. Try again shortly.':
+        'API error: '+m;
+      typing.classList.remove('typing');return;
+    }
+
     const data=await resp.json();
-    const reply=data?.candidates?.[0]?.content?.parts?.[0]?.text||'Sorry, no response generated.';
+    const reply=data?.choices?.[0]?.message?.content||'Sorry, no response generated.';
     chatHistory.push({role:'assistant',content:reply});
-    typing.innerHTML=reply.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+    typing.innerHTML=reply
+      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g,'<em>$1</em>')
+      .replace(/\n/g,'<br>');
     typing.classList.remove('typing');
-  }catch(e){typing.textContent='Network error: '+e.message;typing.classList.remove('typing');}
+  }catch(e){
+    typing.textContent='Network error: '+e.message;
+    typing.classList.remove('typing');
+  }
 }
 
 // ═══════════════════════════════════════════════════════
